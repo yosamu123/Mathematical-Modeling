@@ -1,0 +1,424 @@
+---
+title: "Topic 4: Survival Outcomes of AIDS Patients in Australia"
+author: "Yosamu MUHANZI"
+format: html
+toc: true
+number-sections: true
+execute:
+  echo: true
+  warning: false
+  message: false
+---
+
+# Introduction
+
+Acquired Immunodeficiency Syndrome (AIDS) is a disease that damages the immune system and makes the body more vulnerable to infections and other illnesses. Although medical treatment has improved over the years, AIDS still causes many deaths around the world.
+
+Studying survival after diagnosis helps researchers understand how long patients live after developing the disease and what factors influence survival. Some patients die during follow-up while others are still alive at the end of the study. When this happens, the outcome is called **time-to-event data**, and survival analysis is the appropriate statistical method.
+
+This project investigates survival outcomes of AIDS patients in Australia. The analysis focuses on how factors such as age, sex, state of residence, and transmission category affect survival time.
+
+The survival analysis methods used in this project are :
+
+- Kaplan–Meier survival estimation
+- Log-rank test
+- Cox proportional hazards model
+- Proportional hazards assumption test
+
+These methods help describe survival patterns and identify factors associated with the risk of death.
+
+## Objective
+
+The main objective of this study is to investigate the survival outcomes of AIDS patients in Australia.
+
+The specific objectives are:
+
+- To explore the dataset using descriptive statistics and graphs.
+- To estimate survival probabilities using Kaplan–Meier curves.
+- To compare survival between groups using the log-rank test.
+- To identify factors affecting survival using the Cox proportional hazards model.
+- To check whether the proportional hazards assumption is satisfied.
+
+
+
+## Load the Dataset
+
+```{r}
+library(survival)
+library(MASS)
+library(dplyr)
+data(Aids2)
+str(Aids2)
+```
+
+**Interpretation**
+
+The dataset contains information about AIDS patients in Australia.
+
+Each row represents one patient and includes information such as:
+
+- sex
+- age
+- state of residence
+- transmission category
+- diagnosis date
+- death date
+- survival status
+
+#  Create Survival Variables
+
+```{r}
+data("Aids2")
+aids <- Aids2 |>
+  mutate(
+    survival_time = as.numeric(death - diag),
+    survival_years = survival_time / 365.25,
+    event = ifelse(status == "D", 1, 0)
+  )
+head(aids)
+```
+
+ **Interpretation**
+
+The variable survival_time gives the number of days each patient survived after diagnosis, calculated as death minus diag. The variable survival_years changes this survival time into years by dividing by 365.25, which makes the time easier to understand. The variable event shows whether the patient died or not, where 1 means death occurred and 0 means censored or still alive.
+
+#  Exploratory Data Analysis (EDA)
+
+Exploratory data analysis (EDA) helps us understand the AIDS dataset before doing the survival analysis. In our study, it is used to look at important variables such as age, sex, state, transmission category, survival time, and event status. It helps us see how the patients are grouped, check for missing values, and observe general patterns in the data. This is important because it gives us a simple picture of the data before we use the Kaplan–Meier curve, log-rank test, and Cox model.
+
+## Age Distribution
+
+```{r}
+library(ggplot2)
+library(MASS)
+library(dplyr)
+
+
+
+ggplot(aids, aes(age)) +
+  geom_histogram(fill = "steelblue", bins = 30) +
+  labs(title = "Distribution of Age", x = "Age", y = "Count")
+```
+
+ **Interpretation**
+
+The histogram shows the distribution of age and the number of patients in each age group. Most patients are between about 25 and 45 years old, with the highest number around 30 to 40 years. There are fewer patients at very young ages and fewer at older ages above about 60 years. This means that in this study, AIDS patients were mainly young and middle-aged adults
+
+## Sex Distribution
+
+```{r}
+ggplot(aids, aes(sex)) +
+  geom_bar(fill="orange") +
+  labs(title="Sex Distribution", x="Sex", y="Count")
+```
+
+**interpretantion**
+
+The bar chart compares sex (male and female) with the number of patients. It shows that the number of male patients is much higher than female patients.  a small number of females are in the dataset, while most patients are male. This means that in this study, AIDS cases were mainly observed in males compared with females.
+
+
+##  Follow-up Times for AIDS Patients
+
+```{r}
+library(MASS)
+library(dplyr)
+library(ggplot2)
+
+data("Aids2")
+aids <- Aids2
+
+aids <- aids %>%
+  mutate(
+    survival_time = as.numeric(death - diag),
+    survival_years = survival_time / 365.25,
+    outcome = ifelse(status == "D", "Death", "Censored")
+  )
+
+set.seed(123)
+aids_swim <- aids %>%
+  slice_sample(n = 30) %>%
+  arrange(survival_years) %>%
+  mutate(patient_id = row_number())
+
+ggplot(aids_swim, aes(y = factor(patient_id))) +
+  geom_segment(
+    aes(x = 0, xend = survival_years, yend = factor(patient_id)),
+    linewidth = 1,
+    color = "steelblue"
+  ) +
+  geom_point(
+    aes(x = survival_years, shape = outcome, color = outcome),
+    size = 3
+  ) +
+  scale_shape_manual(values = c("Death" = 17, "Censored" = 16)) +
+  scale_color_manual(values = c("Death" = "red", "Censored" = "black")) +
+  labs(
+    title = "Swimmer Plot of Follow-up Times for AIDS Patients",
+    x = "Time from diagnosis (years)",
+    y = "Patient ID",
+    shape = "Outcome",
+    color = "Outcome"
+  ) +
+  theme_bw() +
+  theme(
+    plot.title = element_text(face = "bold"),
+    axis.text.y = element_text(size = 8)
+  )
+```
+ **Interpretation**
+
+The swimmer plot shows the follow-up time for each AIDS patient. The x-axis shows time in years, and the y-axis shows patients. Each line shows how long a patient was followed. A red triangle means death, and a black dot means the patient was censored. The plot shows that some patients had short follow-up times, while others were followed for several years. It also shows that deaths and censored cases occurred at different times.
+
+## Survival Time Distribution
+
+```{r}
+ggplot(aids, aes(survival_years)) +
+  geom_histogram(fill="darkgreen", bins=30) +
+  labs(title="Distribution of Survival Time", x="Years", y="Count")
+```
+
+ **Interpretation**
+
+
+The histogram shows survival time in years and the number of patients. It shows that many patients survived for 0 to 2 years after diagnosis. As survival time increases, the number of patients becomes smaller. This means most patients had short survival time, and only a few had long survival time.
+
+#  Model Formulation
+
+Survival analysis studies the time until an event occurs.
+
+The survival function is defined as:
+
+S(t) = P(T > t)
+
+This represents the probability that a patient survives longer than time t.
+
+The Cox proportional hazards model is written as:
+
+h(t|X) = h₀(t) exp(β₁X₁ + β₂X₂ + ...)
+
+where:
+
+- h(t|X) is the hazard of death
+- h₀(t) is the baseline hazard
+- X represents explanatory variables
+
+The predictors used in this study are:
+
+- age
+- sex
+- state
+- transmission category
+
+## Kaplan–Meier Survival Curve
+
+```{r}
+
+library(MASS)
+library(dplyr)
+library(survival)
+library(survminer)
+
+data("Aids2")
+
+aids <- Aids2 |>
+  mutate(
+    survival_time = as.numeric(death - diag),
+    survival_years = survival_time / 365.25,
+    event = ifelse(status == "D", 1, 0)
+  )
+
+km_fit <- survfit(Surv(survival_years, event) ~ 1, data = aids)
+
+p1 <- ggsurvplot(
+  km_fit,
+  data = aids,
+  conf.int = TRUE,
+  risk.table = TRUE,
+  xlab = "Time (Years)",
+  ylab = "Survival Probability",
+  title = "Kaplan-Meier Survival Curve"
+)
+
+print(p1)
+```
+
+ **Interpretation**
+
+The  Kaplan–Meier curve shows that the survival probability of AIDS patients decreases over time. At the start, all 2843 patients were alive, so the survival probability begins near 1. As time goes on, the curve keeps going down, which means more patients die during follow-up. By around 2 years, survival has dropped a lot, and after 4 to 6 years only a small number of patients are still alive. The number at risk also becomes smaller over time, from 2843 at the start to 459 at 2 years, 47 at 4 years, and 6 at 6 years. This shows that survival became lower as follow-up time increased.
+
+## Kaplan–Meier survival curve by sex
+
+```{r}
+library(MASS)
+library(dplyr)
+library(survival)
+library(survminer)
+
+data("Aids2")
+aids <- Aids2
+
+aids <- aids %>%
+  mutate(
+    survival_time = as.numeric(death - diag),
+    survival_years = survival_time / 365.25,
+    event = ifelse(status == "D", 1, 0)
+  )
+
+aids$sex <- factor(aids$sex, levels = c("F", "M"), labels = c("Female", "Male"))
+
+km_sex <- survfit(Surv(survival_years, event) ~ sex, data = aids)
+
+ggsurvplot(
+  km_sex,
+  data = aids,
+  risk.table = TRUE,
+  conf.int = FALSE,
+  pval = TRUE,
+  risk.table.y.text = TRUE,
+  risk.table.y.text.col = TRUE,
+  risk.table.col = "strata",
+  risk.table.height = 0.28,
+  break.time.by = 1,
+  xlab = "Time (years)",
+  ylab = "Survival probability",
+  title = "Survival by Sex",
+  legend.title = "Sex",
+  legend.labs = c("Female", "Male"),
+  tables.theme = theme_cleantable(),
+  ggtheme = theme_bw(),
+  fontsize = 4
+)
+```
+
+
+
+ **Interpretation**
+
+The Kaplan–Meier survival curve compares survival between male and female AIDS patients. At the beginning of the study, the survival probability for both groups is close to 1, meaning almost all patients were alive at the start. As time increases, the survival probability decreases for both males and females, showing that deaths occur over time. The female survival curve is slightly higher than the male curve in several parts of the graph, suggesting that females may survive a little longer than males. However, the difference between the two groups is small. The log-rank test gives a p-value of 0.36, which is greater than 0.05, indicating that the difference in survival between males and females is not statistically significant
+
+## Log-Rank Test
+
+```{r}
+survdiff(Surv(survival_years, event) ~ sex, data = aids)
+```
+
+ **Interpretation**
+
+
+The log-rank test shows that there is no significant difference in survival between male and female AIDS patients. Although females had 53 observed deaths and males had 1708, the p-value is 0.4, which is greater than 0.05. This means the difference in survival between the two groups is small and may be due to chance. Therefore, sex does not seem to have an important effect on survival time in this study
+
+## Cox Proportional Hazards Model
+
+```{r}
+cox_model <- coxph(
+  Surv(survival_years, event) ~ age + sex + state + T.categ,
+  data = aids
+)
+
+summary(cox_model)
+```
+
+ **Interpretation**
+
+
+The Cox proportional hazards model shows that age is an important factor in survival, because its hazard ratio is 1.013 with p < 0.001, meaning that for each one-year increase in age, the risk of death increases by about 1.3% while holding other factors constant. Sex is not significant (p = 0.790), so survival does not differ importantly between males and females after adjustment for other variables. For state, none of the categories is clearly significant at the 5% level, although Queensland shows a slightly higher risk than the reference group (HR = 1.163, p = 0.085), which is only weak evidence. For transmission category, some groups differ significantly: patients in id have a lower risk of death (HR = 0.61, p = 0.045) and those in het also have a lower risk (HR = 0.48, p = 0.005) compared with the reference category, while patients in blood have a higher risk (HR = 1.42, p = 0.010). The overall model is statistically significant (Likelihood ratio test p < 0.001), which means the variables in the model help explain survival, although the concordance of 0.567 suggests the model has only a modest ability to predict who survives longer
+
+## Hazard Ratio Table
+
+```{r}
+library(broom)
+
+tidy(cox_model, exponentiate = TRUE, conf.int = TRUE)
+```
+
+
+## Proportional Hazards Assumption
+
+```{r}
+ph_test <- cox.zph(cox_model)
+ph_test
+```
+
+ **Interpretation**
+
+
+The proportional hazards test checks whether the effect of each variable stays the same over time in the Cox model. the global p-value is 2.6 × 10⁻⁸, which is less than 0.05, so the model does not fully satisfy this assumption. This means some variables change their effect over time. In particular, age (p = 1.9 × 10⁻⁶), state (p = 0.0007), and transmission category (p = 1.5 × 10⁻⁵) do not satisfy the assumption, so their effects on survival are not constant during follow-up. However, sex (p = 0.0991) is greater than 0.05, so sex does not show a serious problem and its effect can be treated as fairly constant over time. Overall, this means the Cox model is useful, but it should be interpreted carefully because some predictors do not meet the proportional hazards assumption.
+
+## Schoenfeld Residual Plot
+
+```{r}
+library(MASS)
+library(dplyr)
+library(survival)
+
+data("Aids2")
+aids <- Aids2
+
+aids <- aids %>%
+  mutate(
+    survival_time = as.numeric(death - diag),
+    survival_years = survival_time / 365.25,
+    event = ifelse(status == "D", 1, 0)
+  )
+
+cox_model <- coxph(
+  Surv(survival_years, event) ~ age + sex + state + T.categ,
+  data = aids
+)
+
+ph_test <- cox.zph(cox_model)
+
+
+round(ph_test$table, 6)
+
+par(mfrow = c(2, 2))
+
+plot(ph_test[1], main = paste("Age: p =", signif(ph_test$table["age", "p"], 4)),
+     col = "red", lwd = 2)
+plot(ph_test[2], main = paste("Sex: p =", signif(ph_test$table["sex", "p"], 4)),
+     col = "red", lwd = 2)
+plot(ph_test[3], main = paste("State: p =", signif(ph_test$table["state", "p"], 4)),
+     col = "red", lwd = 2)
+plot(ph_test[4], main = paste("Transmission category: p =", signif(ph_test$table["T.categ", "p"], 4)),
+     col = "red", lwd = 2)
+
+mtext(
+  paste("Global Schoenfeld Test p =", signif(ph_test$table["GLOBAL", "p"], 4)),
+  outer = TRUE,
+  line = -2,
+  cex = 1.1
+)
+
+par(mfrow = c(1, 1))
+```
+
+
+ **Interpretation**
+
+The Schoenfeld residual test was used to check the proportional hazards assumption of the Cox model. The global test is significant (p = 2.57 × 10⁻⁸), which suggests that the proportional hazards assumption may not hold for the model. Age, state, and transmission category have p-values less than 0.05, indicating that their effects may change over time. However, sex has a p-value greater than 0.05, suggesting that the proportional hazards assumption is reasonable for this variable.
+
+
+# Recommendations
+
+The government should strengthen early HIV testing and early treatment programs. The analysis showed that survival probability decreases over time after diagnosis. Detecting HIV earlier and starting treatment quickly can help patients live longer and improve their quality of life.
+
+Health services should give special attention to older patients. The results showed that age increases the risk of death, meaning older patients have poorer survival outcomes. Regular monitoring and targeted healthcare support for older patients may help reduce this risk.
+
+Prevention programs should focus on major transmission groups. The study showed that some transmission categories have different levels of risk. Public health programs should continue to promote awareness, safe behaviors, and prevention strategies for high-risk groups to reduce new infections.
+
+The government should improve long-term care and follow-up for AIDS patients. Since survival decreases over time, continuous medical   care, treatment support, and regular monitoring are important to improve patient outcomes.
+
+The government should strengthen data collection and monitoring systems for HIV/AIDS patients. Better data can help health authorities understand survival patterns and design more effective policies and healthcare programs.
+
+
+
+# Conclusion
+
+
+This study examined the survival outcomes of AIDS patients in Australia using the Aids2 dataset. The analysis showed that the survival probability of AIDS patients decreases over time after diagnosis. Many patients survived for a short period, while fewer patients survived for many years.
+
+The results showed that age is an important factor affecting survival. Older patients have a higher risk of death compared with younger patients. The analysis also showed that some transmission categories have different levels of risk, meaning that survival outcomes are not the same for all groups.
+
+The comparison between males and females showed that females appeared to have slightly better survival, but the difference was not statistically significant. This means sex did not have a strong effect on survival in this study.
+
+The results show that survival of AIDS patients is strongly related to age and transmission category. Survival becomes lower as more time passes after diagnosis. These findings help us better understand how long patients live after diagnosis and can help health authorities plan better treatment and care programs for AIDS patients.
