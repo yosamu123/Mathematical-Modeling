@@ -1,1 +1,3 @@
 # Mathematical-Modeling
+
+I am Yosamu epidemiologist am working .... 
